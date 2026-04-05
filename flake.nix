@@ -1,6 +1,11 @@
 {
   description = "fff-tui experimental Rust port";
 
+  nixConfig = {
+    extra-substituters = "https://anmonteiro.nix-cache.workers.dev";
+    extra-trusted-public-keys = "ocaml.nix-cache.com-1:/xI2h2+56rwFfKyyFVbkJSeGqSIYMC/Je+7XXqGKDIY=";
+  };
+
   inputs.nixpkgs.url = "github:nix-ocaml/nix-overlays";
 
   outputs =

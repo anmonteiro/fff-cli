@@ -8,6 +8,10 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NIX_CONFIG: |
+    accept-flake-config = true
+    extra-substituters = https://anmonteiro.nix-cache.workers.dev
+    extra-trusted-public-keys = ocaml.nix-cache.com-1:/xI2h2+56rwFfKyyFVbkJSeGqSIYMC/Je+7XXqGKDIY=
 
 jobs:
   check:
