@@ -8,11 +8,14 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   spelling:
     name: Spell Check with Typos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6.0.2
       - name: Spell Check Repo
         uses: crate-ci/typos@685eb3d55be2f85191e8c84acb9f44d7756f84ab
