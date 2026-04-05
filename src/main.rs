@@ -221,9 +221,9 @@ fn draw_box(out: &mut dyn Write, area: BoxArea, title: &str) -> io::Result<()> {
     move_to(out, area.row, area.col)?;
     write!(
         out,
-        "{BORDER}┌{}{}{RESET}{BORDER}{}┐{RESET}",
+        "{BORDER}┌{}{BOLD}{}{RESET}{BORDER}{}┐{RESET}",
         "─".repeat(left_fill),
-        format!("{BOLD}{title_text}"),
+        title_text,
         "─".repeat(right_fill),
     )?;
 
@@ -755,30 +755,19 @@ fn run(app: &mut App) -> Result<Option<String>> {
     }
 }
 
-fn run_grep(
-    query: String,
-    path: PathBuf,
-    fixed_strings: bool,
-    fuzzy: bool,
-    context: Option<usize>,
-    before_context: Option<usize>,
-    after_context: Option<usize>,
-    max_matches_per_file: usize,
-    page_limit: usize,
-    smart_case: bool,
-) -> Result<()> {
-    let before_context = before_context.or(context).unwrap_or(0);
-    let after_context = after_context.or(context).unwrap_or(0);
+fn run_grep(cli: Cli) -> Result<()> {
+    let before_context = cli.before_context.or(cli.context).unwrap_or(0);
+    let after_context = cli.after_context.or(cli.context).unwrap_or(0);
     let result = grep_cli_search(&GrepCliOptions {
-        base_path: path,
-        query,
-        mode: grep_cli_mode(fixed_strings, fuzzy),
-        smart_case,
+        base_path: cli.path,
+        query: cli.query.context("missing grep query")?,
+        mode: grep_cli_mode(cli.fixed_strings, cli.fuzzy),
+        smart_case: cli.smart_case,
         before_context,
         after_context,
         max_file_size: 10 * 1024 * 1024,
-        max_matches_per_file,
-        page_limit,
+        max_matches_per_file: cli.max_matches_per_file,
+        page_limit: cli.page_limit,
     })?;
     let use_color = io::stdout().is_terminal();
     let mut current_path: Option<String> = None;
@@ -866,17 +855,6 @@ fn main() -> Result<()> {
                 Err(error) => Err(error),
             }
         }
-        None => run_grep(
-            cli.query.context("missing grep query")?,
-            cli.path,
-            cli.fixed_strings,
-            cli.fuzzy,
-            cli.context,
-            cli.before_context,
-            cli.after_context,
-            cli.max_matches_per_file,
-            cli.page_limit,
-            cli.smart_case,
-        ),
+        None => run_grep(cli),
     }
 }
