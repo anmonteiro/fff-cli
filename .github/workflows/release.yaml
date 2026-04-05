@@ -41,6 +41,9 @@ jobs:
           cache-on-failure: true
           target: ${{ matrix.target }}
 
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+
       - name: Build release binary
         run: cargo build --release --locked --target ${{ matrix.target }}
 
