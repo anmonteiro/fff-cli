@@ -1,0 +1,28 @@
+name: Nix CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/flake-checker-action@main
+
+      - name: Run `nix flake check`
+        run: nix flake check
+
+      - name: Run cargo check in dev shell
+        run: nix develop -c cargo check
+
+      - name: Run cargo test in dev shell
+        run: nix develop -c cargo test
