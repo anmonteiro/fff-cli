@@ -23,6 +23,7 @@
               rustc
               rustfmt
               clippy
+              zig
               pkg-config
               openssl
             ]

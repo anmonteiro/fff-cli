@@ -26,6 +26,9 @@ jobs:
           cache-on-failure: true
           components: rustfmt, clippy
 
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+
       - name: Run tests
         run: cargo test --locked
 
@@ -52,5 +55,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
       - name: Run clippy
         run: cargo clippy -- -D warnings
