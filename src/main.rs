@@ -97,6 +97,7 @@ struct TerminalUi {
     anchor_row: u16,
     anchor_col: u16,
     last_box: Option<BoxArea>,
+    last_size: Option<(u16, u16)>,
 }
 
 impl App {
@@ -203,7 +204,15 @@ fn move_to(out: &mut dyn Write, row: u16, col: u16) -> io::Result<()> {
 fn clear_rect(out: &mut dyn Write, area: BoxArea) -> io::Result<()> {
     for offset in 0..area.height {
         move_to(out, area.row + offset, area.col)?;
-        write!(out, "{}", " ".repeat(area.width as usize))?;
+        write!(out, "\x1b[2K")?;
+    }
+    Ok(())
+}
+
+fn clear_below_prompt(out: &mut dyn Write, start_row: u16, rows: u16) -> io::Result<()> {
+    for row in start_row..rows {
+        move_to(out, row, 0)?;
+        write!(out, "\x1b[2K")?;
     }
     Ok(())
 }
@@ -533,6 +542,14 @@ fn ensure_space_below_prompt(
 
 fn render(app: &mut App, ui: &mut TerminalUi) -> Result<()> {
     let (cols, rows) = terminal::size()?;
+    let resized = ui.last_size.is_some_and(|last| last != (cols, rows));
+    ui.last_size = Some((cols, rows));
+
+    if resized {
+        clear_below_prompt(&mut *ui.output, ui.anchor_row.saturating_add(1), rows)?;
+        ui.last_box = None;
+    }
+
     let desired = desired_height(app.mode, rows);
     ui.anchor_row = ensure_space_below_prompt(&mut *ui.output, ui.anchor_row, desired, rows)?;
 
@@ -716,6 +733,7 @@ fn run(app: &mut App) -> Result<Option<String>> {
         anchor_row: 0,
         anchor_col: 0,
         last_box: None,
+        last_size: None,
     };
 
     let (row, col) = query_cursor_position(&mut *ui.output)?;

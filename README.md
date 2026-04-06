@@ -10,6 +10,12 @@ Current modes:
 
 This repo is currently a standalone Rust CLI nested inside the dotfiles repo while it is being developed.
 
+## Demo
+
+History search selecting a prior `nix build ...` command:
+
+[![fff history demo](demo/fff-history-demo-kitty-frame.png)](demo/fff-history-demo-kitty.mp4)
+
 ## Build
 
 ### With Nix
