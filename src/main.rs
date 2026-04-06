@@ -29,6 +29,7 @@ const BORDER: &str = "\x1b[38;5;149m";
 const SELECTED: &str = "\x1b[48;5;238m\x1b[38;5;230m";
 const SELECTED_ACCENT: &str = "\x1b[48;5;238m\x1b[38;5;111m";
 const MATCH_HL: &str = "\x1b[30m\x1b[48;5;228m";
+const PROMPT_CURSOR: &str = "\x1b[47m \x1b[0m";
 
 #[derive(Debug, Subcommand)]
 enum Command {
@@ -534,6 +535,10 @@ fn desired_height(mode: PickerMode, rows: u16) -> u16 {
     .min(rows.saturating_sub(1))
 }
 
+fn prompt_line(query: &str) -> String {
+    format!("{CYAN}🪿 {RESET}{query}{PROMPT_CURSOR}")
+}
+
 fn ensure_space_below_prompt(
     out: &mut dyn Write,
     anchor_row: u16,
@@ -605,7 +610,7 @@ fn render(app: &mut App, ui: &mut TerminalUi) -> Result<()> {
                 prompt_row,
                 1,
                 content_width,
-                &format!("{CYAN}🪿 {RESET}{}", app.query),
+                &prompt_line(&app.query),
             )?;
 
             let left_plain = format!(
@@ -674,7 +679,7 @@ fn render(app: &mut App, ui: &mut TerminalUi) -> Result<()> {
                 prompt_row,
                 1,
                 content_width,
-                &format!("{CYAN}🪿 {RESET}{}", app.query),
+                &prompt_line(&app.query),
             )?;
         }
     }
@@ -698,25 +703,43 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
         return Ok(None);
     }
 
+    let reverse_history = matches!(app.mode, PickerMode::History);
+
     match key.code {
         KeyCode::Enter => return Ok(app.selected_output()),
         KeyCode::Esc => bail!("cancelled"),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => bail!("cancelled"),
         KeyCode::Up => {
             let wrap = matches!(app.mode, PickerMode::Files);
-            app.selected = move_selection_up(app.selected, app.result_len(), wrap);
+            app.selected = if reverse_history {
+                move_selection_down(app.selected, app.result_len(), wrap)
+            } else {
+                move_selection_up(app.selected, app.result_len(), wrap)
+            };
         }
         KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             let wrap = matches!(app.mode, PickerMode::Files);
-            app.selected = move_selection_up(app.selected, app.result_len(), wrap);
+            app.selected = if reverse_history {
+                move_selection_down(app.selected, app.result_len(), wrap)
+            } else {
+                move_selection_up(app.selected, app.result_len(), wrap)
+            };
         }
         KeyCode::Down => {
             let wrap = matches!(app.mode, PickerMode::Files);
-            app.selected = move_selection_down(app.selected, app.result_len(), wrap);
+            app.selected = if reverse_history {
+                move_selection_up(app.selected, app.result_len(), wrap)
+            } else {
+                move_selection_down(app.selected, app.result_len(), wrap)
+            };
         }
         KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             let wrap = matches!(app.mode, PickerMode::Files);
-            app.selected = move_selection_down(app.selected, app.result_len(), wrap);
+            app.selected = if reverse_history {
+                move_selection_up(app.selected, app.result_len(), wrap)
+            } else {
+                move_selection_down(app.selected, app.result_len(), wrap)
+            };
         }
         KeyCode::Backspace => {
             if !app.query.is_empty() {
