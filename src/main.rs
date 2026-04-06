@@ -1,10 +1,6 @@
 use std::cmp::max;
-#[cfg(unix)]
-use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{self, IsTerminal, Read, Write};
-#[cfg(unix)]
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -98,24 +94,12 @@ struct BoxArea {
 
 struct TerminalUi {
     output: Box<dyn Write>,
+    input: Box<dyn Read>,
+    use_alternate_screen: bool,
     anchor_row: u16,
     anchor_col: u16,
     last_box: Option<BoxArea>,
     last_size: Option<(u16, u16)>,
-}
-
-#[cfg(unix)]
-struct StdinTtyGuard {
-    saved_stdin: OwnedFd,
-}
-
-#[cfg(unix)]
-impl Drop for StdinTtyGuard {
-    fn drop(&mut self) {
-        // Restore the original stdin fd after the picker exits so command
-        // substitution and pipes continue working for the parent shell.
-        let _ = unsafe { dup2(self.saved_stdin.as_raw_fd(), io::stdin().as_raw_fd()) };
-    }
 }
 
 impl App {
@@ -210,39 +194,16 @@ fn interactive_output() -> Result<Box<dyn Write>> {
     Ok(Box::new(tty))
 }
 
-#[cfg(unix)]
-unsafe extern "C" {
-    fn dup(fd: i32) -> i32;
-    fn dup2(src: i32, dst: i32) -> i32;
-}
-
-#[cfg(unix)]
-fn attach_tty_to_stdin() -> Result<Option<StdinTtyGuard>> {
+fn interactive_input() -> Result<Box<dyn Read>> {
     if io::stdin().is_terminal() {
-        return Ok(None);
+        return Ok(Box::new(io::stdin()));
     }
 
-    let tty = File::open("/dev/tty").context("failed to open /dev/tty for interactive input")?;
-    let stdin_fd = io::stdin().as_raw_fd();
-    let saved_stdin = unsafe { dup(stdin_fd) };
-    if saved_stdin < 0 {
-        return Err(io::Error::last_os_error()).context("failed to duplicate stdin");
-    }
-
-    if unsafe { dup2(tty.as_raw_fd(), stdin_fd) } < 0 {
-        let error = io::Error::last_os_error();
-        let _ = unsafe { OwnedFd::from_raw_fd(saved_stdin) };
-        return Err(error).context("failed to attach /dev/tty to stdin");
-    }
-
-    Ok(Some(StdinTtyGuard {
-        saved_stdin: unsafe { OwnedFd::from_raw_fd(saved_stdin) },
-    }))
-}
-
-#[cfg(not(unix))]
-fn attach_tty_to_stdin() -> Result<Option<()>> {
-    Ok(None)
+    let tty = OpenOptions::new()
+        .read(true)
+        .open("/dev/tty")
+        .context("failed to open /dev/tty for interactive input")?;
+    Ok(Box::new(tty))
 }
 
 fn move_to(out: &mut dyn Write, row: u16, col: u16) -> io::Result<()> {
@@ -320,15 +281,14 @@ fn draw_inner_line(
     Ok(())
 }
 
-fn query_cursor_position(out: &mut dyn Write) -> Result<(u16, u16)> {
+fn query_cursor_position(out: &mut dyn Write, input: &mut dyn Read) -> Result<(u16, u16)> {
     out.write_all(b"\x1b[6n")?;
     out.flush()?;
 
-    let mut stdin = io::stdin();
     let mut buf = Vec::new();
     let mut byte = [0u8; 1];
     loop {
-        stdin.read_exact(&mut byte)?;
+        input.read_exact(&mut byte)?;
         buf.push(byte[0]);
         if byte[0] == b'R' {
             break;
@@ -728,8 +688,12 @@ fn cleanup(ui: &mut TerminalUi) -> Result<()> {
     if let Some(area) = ui.last_box {
         clear_rect(&mut *ui.output, area)?;
     }
-    move_to(&mut *ui.output, ui.anchor_row, ui.anchor_col)?;
-    ui.output.write_all(b"\x1b[?25h\x1b[0m")?;
+    if ui.use_alternate_screen {
+        ui.output.write_all(b"\x1b[?25h\x1b[0m\x1b[?1049l")?;
+    } else {
+        move_to(&mut *ui.output, ui.anchor_row, ui.anchor_col)?;
+        ui.output.write_all(b"\x1b[?25h\x1b[0m")?;
+    }
     ui.output.flush()?;
     Ok(())
 }
@@ -780,19 +744,26 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
 }
 
 fn run(app: &mut App) -> Result<Option<String>> {
-    let _stdin_guard = attach_tty_to_stdin()?;
+    let use_alternate_screen = !io::stdout().is_terminal();
     enable_raw_mode()?;
     let mut ui = TerminalUi {
         output: interactive_output()?,
+        input: interactive_input()?,
+        use_alternate_screen,
         anchor_row: 0,
         anchor_col: 0,
         last_box: None,
         last_size: None,
     };
 
-    let (row, col) = query_cursor_position(&mut *ui.output)?;
-    ui.anchor_row = row;
-    ui.anchor_col = col;
+    if ui.use_alternate_screen {
+        ui.output.write_all(b"\x1b[?1049h")?;
+        ui.output.flush()?;
+    } else {
+        let (row, col) = query_cursor_position(&mut *ui.output, &mut *ui.input)?;
+        ui.anchor_row = row;
+        ui.anchor_col = col;
+    }
 
     let result = (|| -> Result<Option<String>> {
         render(app, &mut ui)?;
