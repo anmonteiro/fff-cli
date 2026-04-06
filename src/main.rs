@@ -95,7 +95,6 @@ struct BoxArea {
 struct TerminalUi {
     output: Box<dyn Write>,
     input: Box<dyn Read>,
-    use_alternate_screen: bool,
     anchor_row: u16,
     anchor_col: u16,
     last_box: Option<BoxArea>,
@@ -688,12 +687,8 @@ fn cleanup(ui: &mut TerminalUi) -> Result<()> {
     if let Some(area) = ui.last_box {
         clear_rect(&mut *ui.output, area)?;
     }
-    if ui.use_alternate_screen {
-        ui.output.write_all(b"\x1b[?25h\x1b[0m\x1b[?1049l")?;
-    } else {
-        move_to(&mut *ui.output, ui.anchor_row, ui.anchor_col)?;
-        ui.output.write_all(b"\x1b[?25h\x1b[0m")?;
-    }
+    move_to(&mut *ui.output, ui.anchor_row, ui.anchor_col)?;
+    ui.output.write_all(b"\x1b[?25h\x1b[0m")?;
     ui.output.flush()?;
     Ok(())
 }
@@ -744,26 +739,19 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
 }
 
 fn run(app: &mut App) -> Result<Option<String>> {
-    let use_alternate_screen = !io::stdout().is_terminal();
     enable_raw_mode()?;
     let mut ui = TerminalUi {
         output: interactive_output()?,
         input: interactive_input()?,
-        use_alternate_screen,
         anchor_row: 0,
         anchor_col: 0,
         last_box: None,
         last_size: None,
     };
 
-    if ui.use_alternate_screen {
-        ui.output.write_all(b"\x1b[?1049h")?;
-        ui.output.flush()?;
-    } else {
-        let (row, col) = query_cursor_position(&mut *ui.output, &mut *ui.input)?;
-        ui.anchor_row = row;
-        ui.anchor_col = col;
-    }
+    let (row, col) = query_cursor_position(&mut *ui.output, &mut *ui.input)?;
+    ui.anchor_row = row;
+    ui.anchor_col = col;
 
     let result = (|| -> Result<Option<String>> {
         render(app, &mut ui)?;
