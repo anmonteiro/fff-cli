@@ -582,8 +582,8 @@ dependencies = [
 
 [[package]]
 name = "fff-grep"
-version = "0.5.2"
-source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=29e6480ea011351fe468fdec3ee01a4ff1d760cf#29e6480ea011351fe468fdec3ee01a4ff1d760cf"
+version = "0.5.1"
+source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=db4cd2825c32e5e53e12bb8af106ff724d33904e#db4cd2825c32e5e53e12bb8af106ff724d33904e"
 dependencies = [
  "bstr",
  "memchr",
@@ -591,16 +591,16 @@ dependencies = [
 
 [[package]]
 name = "fff-query-parser"
-version = "0.5.2"
-source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=29e6480ea011351fe468fdec3ee01a4ff1d760cf#29e6480ea011351fe468fdec3ee01a4ff1d760cf"
+version = "0.5.1"
+source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=db4cd2825c32e5e53e12bb8af106ff724d33904e#db4cd2825c32e5e53e12bb8af106ff724d33904e"
 dependencies = [
  "zlob",
 ]
 
 [[package]]
 name = "fff-search"
-version = "0.5.2"
-source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=29e6480ea011351fe468fdec3ee01a4ff1d760cf#29e6480ea011351fe468fdec3ee01a4ff1d760cf"
+version = "0.5.1"
+source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=db4cd2825c32e5e53e12bb8af106ff724d33904e#db4cd2825c32e5e53e12bb8af106ff724d33904e"
 dependencies = [
  "ahash",
  "aho-corasick",

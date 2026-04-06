@@ -19,6 +19,42 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
+      packages = forAllSystems (pkgs: {
+        default = pkgs.rustPlatform.buildRustPackage {
+          pname = "fff-cli";
+          version = "0.1.0";
+          src = self;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            allowBuiltinFetchGit = true;
+          };
+
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            zig
+            llvmPackages.libclang
+          ];
+
+          buildInputs =
+            with pkgs;
+            [ openssl ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ libiconv ];
+
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+          dontUseZigConfigure = true;
+          dontUseZigBuild = true;
+          dontUseZigCheck = true;
+          dontUseZigInstall = true;
+          doCheck = false;
+        };
+      });
+
+      apps = forAllSystems (pkgs: {
+        default = {
+          type = "app";
+          program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/fff";
+        };
+      });
+
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages =
@@ -41,6 +77,10 @@
             pkgs.openssl
           ];
         };
+      });
+
+      checks = forAllSystems (pkgs: {
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
       });
     };
 }
