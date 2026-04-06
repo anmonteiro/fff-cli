@@ -18,7 +18,8 @@ START_FRAME=8
 FRAME_COUNT=60
 MP4_WIDTH=1080
 GIF_WIDTH=720
-STILL_AT=2.5
+PLAYBACK_SLOWDOWN=5
+STILL_AT=12.5
 MAX_CAPTURE_FRAMES=90
 
 send_chars() {
@@ -168,7 +169,7 @@ sleep 1.8
 sleep 2.2
 
 wait "$cap_pid"
-ffmpeg -y -framerate 10 -start_number "$START_FRAME" -i "$tmp_frames/frame_%04d.png" -frames:v "$FRAME_COUNT" -vf "scale=$MP4_WIDTH:-2:flags=lanczos,format=yuv420p" "$OUT" >/tmp/fff-history-demo-kitty.log 2>&1
+ffmpeg -y -framerate 10 -start_number "$START_FRAME" -i "$tmp_frames/frame_%04d.png" -frames:v "$FRAME_COUNT" -vf "scale=$MP4_WIDTH:-2:flags=lanczos,setpts=${PLAYBACK_SLOWDOWN}*PTS,format=yuv420p" "$OUT" >/tmp/fff-history-demo-kitty.log 2>&1
 ffmpeg -y -i "$OUT" -vf "fps=10,scale=$GIF_WIDTH:-1:flags=lanczos" "$TMP_DEMO_DIR/gif-frame-%03d.png" >/tmp/fff-history-demo-gif-frames.log 2>&1
 magick -dispose previous -delay 10 -loop 0 "$TMP_DEMO_DIR"/gif-frame-*.png "${OUT%.mp4}.gif"
 ffmpeg -y -ss "$STILL_AT" -i "$OUT" -frames:v 1 -update 1 "$FRAME" >/tmp/fff-history-demo-kitty-frame.log 2>&1
