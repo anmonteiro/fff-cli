@@ -14,9 +14,7 @@ This repo is currently a standalone Rust CLI nested inside the dotfiles repo whi
 
 History search selecting a prior `nix build ...` command:
 
-[![fff history demo](demo/fff-history-demo-kitty.gif)](demo/fff-history-demo-kitty.mp4)
-
-Click the demo to open the higher-quality MP4.
+https://github.com/user-attachments/assets/3d3f86f2-3403-44c1-8683-52f956c5952c
 
 ## Build
 
