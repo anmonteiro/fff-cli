@@ -6,10 +6,20 @@
     extra-trusted-public-keys = "ocaml.nix-cache.com-1:/xI2h2+56rwFfKyyFVbkJSeGqSIYMC/Je+7XXqGKDIY=";
   };
 
-  inputs.nixpkgs.url = "github:nix-ocaml/nix-overlays";
+  inputs = {
+    nixpkgs.url = "github:nix-ocaml/nix-overlays";
+    fff = {
+      url = "github:dmtrKovalenko/fff.nvim/db4cd2825c32e5e53e12bb8af106ff724d33904e";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      fff,
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -20,13 +30,48 @@
     in
     {
       packages = forAllSystems (pkgs: {
-        default = pkgs.rustPlatform.buildRustPackage {
+        default =
+          let
+            nixSrc = pkgs.runCommand "fff-cli-src" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+              cp -R ${self} "$out"
+              chmod -R +w "$out"
+              cp -R ${fff.outPath} "$out/.nix-fff"
+              chmod -R +w "$out/.nix-fff"
+
+              python - "$out/Cargo.toml" "$out/Cargo.lock" <<'PY'
+              from pathlib import Path
+              import sys
+
+              cargo_toml = Path(sys.argv[1])
+              cargo_lock = Path(sys.argv[2])
+
+              cargo_toml.write_text(
+                  cargo_toml.read_text()
+                  .replace(
+                      'fff = { package = "fff-search", git = "https://github.com/dmtrKovalenko/fff.nvim", rev = "db4cd2825c32e5e53e12bb8af106ff724d33904e", features = ["zlob"] }',
+                      'fff = { package = "fff-search", path = ".nix-fff/crates/fff-core", features = ["zlob"] }',
+                  )
+                  .replace(
+                      'fff-query-parser = { git = "https://github.com/dmtrKovalenko/fff.nvim", package = "fff-query-parser", rev = "db4cd2825c32e5e53e12bb8af106ff724d33904e" }',
+                      'fff-query-parser = { package = "fff-query-parser", path = ".nix-fff/crates/fff-query-parser" }',
+                  )
+              )
+
+              cargo_lock.write_text(
+                  cargo_lock.read_text().replace(
+                      'source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=db4cd2825c32e5e53e12bb8af106ff724d33904e#db4cd2825c32e5e53e12bb8af106ff724d33904e"\n',
+                      "",
+                  )
+              )
+              PY
+            '';
+          in
+          pkgs.rustPlatform.buildRustPackage {
           pname = "fff-cli";
           version = "0.1.0";
-          src = self;
+          src = nixSrc;
           cargoLock = {
-            lockFile = ./Cargo.lock;
-            allowBuiltinFetchGit = true;
+            lockFile = nixSrc + "/Cargo.lock";
           };
 
           nativeBuildInputs = with pkgs; [
