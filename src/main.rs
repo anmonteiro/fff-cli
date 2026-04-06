@@ -79,6 +79,7 @@ struct App {
     mode: PickerMode,
     engine: PickerEngine,
     query: String,
+    query_cursor: usize,
     selected: usize,
     scroll: usize,
     files: Option<FileSearchView>,
@@ -109,6 +110,7 @@ impl App {
             mode: PickerMode::Files,
             engine: PickerEngine::Files(engine),
             query: String::new(),
+            query_cursor: 0,
             selected: 0,
             scroll: 0,
             files: None,
@@ -128,6 +130,7 @@ impl App {
         let mut app = Self {
             mode: PickerMode::History,
             engine: PickerEngine::History(engine),
+            query_cursor: query.chars().count(),
             query,
             selected: 0,
             scroll: 0,
@@ -171,6 +174,131 @@ impl App {
                 .and_then(|view| view.matches.get(self.selected))
                 .map(|item| item.command.clone()),
         }
+    }
+
+    fn query_len_chars(&self) -> usize {
+        self.query.chars().count()
+    }
+
+    fn query_byte_index(&self) -> usize {
+        if self.query_cursor == 0 {
+            return 0;
+        }
+
+        self.query
+            .char_indices()
+            .nth(self.query_cursor)
+            .map(|(idx, _)| idx)
+            .unwrap_or(self.query.len())
+    }
+
+    fn reset_after_query_edit(&mut self) -> Result<()> {
+        self.selected = 0;
+        self.scroll = 0;
+        self.refresh()
+    }
+
+    fn insert_char(&mut self, ch: char) -> Result<()> {
+        let byte_idx = self.query_byte_index();
+        self.query.insert(byte_idx, ch);
+        self.query_cursor += 1;
+        self.reset_after_query_edit()
+    }
+
+    fn delete_backward(&mut self) -> Result<()> {
+        if self.query_cursor == 0 {
+            return Ok(());
+        }
+
+        let end = self.query_byte_index();
+        self.query_cursor -= 1;
+        let start = self.query_byte_index();
+        self.query.replace_range(start..end, "");
+        self.reset_after_query_edit()
+    }
+
+    fn delete_forward(&mut self) -> Result<()> {
+        if self.query_cursor >= self.query_len_chars() {
+            return Ok(());
+        }
+
+        let start = self.query_byte_index();
+        self.query_cursor += 1;
+        let end = self.query_byte_index();
+        self.query_cursor -= 1;
+        self.query.replace_range(start..end, "");
+        self.reset_after_query_edit()
+    }
+
+    fn kill_to_end(&mut self) -> Result<()> {
+        let start = self.query_byte_index();
+        self.query.truncate(start);
+        self.reset_after_query_edit()
+    }
+
+    fn kill_to_start(&mut self) -> Result<()> {
+        let end = self.query_byte_index();
+        self.query.replace_range(..end, "");
+        self.query_cursor = 0;
+        self.reset_after_query_edit()
+    }
+
+    fn move_cursor_left(&mut self) {
+        self.query_cursor = self.query_cursor.saturating_sub(1);
+    }
+
+    fn move_cursor_right(&mut self) {
+        self.query_cursor = (self.query_cursor + 1).min(self.query_len_chars());
+    }
+
+    fn move_cursor_home(&mut self) {
+        self.query_cursor = 0;
+    }
+
+    fn move_cursor_end(&mut self) {
+        self.query_cursor = self.query_len_chars();
+    }
+
+    fn move_cursor_word_left(&mut self) {
+        let chars: Vec<char> = self.query.chars().collect();
+        let mut cursor = self.query_cursor.min(chars.len());
+
+        while cursor > 0 && chars[cursor - 1].is_whitespace() {
+            cursor -= 1;
+        }
+        while cursor > 0 && !chars[cursor - 1].is_whitespace() {
+            cursor -= 1;
+        }
+
+        self.query_cursor = cursor;
+    }
+
+    fn move_cursor_word_right(&mut self) {
+        let chars: Vec<char> = self.query.chars().collect();
+        let mut cursor = self.query_cursor.min(chars.len());
+
+        while cursor < chars.len() && chars[cursor].is_whitespace() {
+            cursor += 1;
+        }
+        while cursor < chars.len() && !chars[cursor].is_whitespace() {
+            cursor += 1;
+        }
+
+        self.query_cursor = cursor;
+    }
+
+    fn kill_word_right(&mut self) -> Result<()> {
+        let start_char = self.query_cursor;
+        self.move_cursor_word_right();
+        if self.query_cursor == start_char {
+            return Ok(());
+        }
+
+        let end = self.query_byte_index();
+        self.query_cursor = start_char;
+        let start = self.query_byte_index();
+        self.query.replace_range(start..end, "");
+        self.reset_after_query_edit()
     }
 }
 
@@ -535,8 +663,34 @@ fn desired_height(mode: PickerMode, rows: u16) -> u16 {
     .min(rows.saturating_sub(1))
 }
 
-fn prompt_line(query: &str) -> String {
-    format!("{CYAN}🪿 {RESET}{query}{PROMPT_CURSOR}")
+fn prompt_line(query: &str, cursor: usize) -> String {
+    let mut rendered = String::from(CYAN);
+    rendered.push('🪿');
+    rendered.push(' ');
+    rendered.push_str(RESET);
+
+    let mut chars = query.chars();
+    for _ in 0..cursor {
+        if let Some(ch) = chars.next() {
+            rendered.push(ch);
+        } else {
+            break;
+        }
+    }
+
+    if let Some(ch) = chars.next() {
+        rendered.push_str("\x1b[30m\x1b[47m");
+        rendered.push(ch);
+        rendered.push_str(RESET);
+    } else {
+        rendered.push_str(PROMPT_CURSOR);
+    }
+
+    for ch in chars {
+        rendered.push(ch);
+    }
+
+    rendered
 }
 
 fn ensure_space_below_prompt(
@@ -610,7 +764,7 @@ fn render(app: &mut App, ui: &mut TerminalUi) -> Result<()> {
                 prompt_row,
                 1,
                 content_width,
-                &prompt_line(&app.query),
+                &prompt_line(&app.query, app.query_cursor),
             )?;
 
             let left_plain = format!(
@@ -679,7 +833,7 @@ fn render(app: &mut App, ui: &mut TerminalUi) -> Result<()> {
                 prompt_row,
                 1,
                 content_width,
-                &prompt_line(&app.query),
+                &prompt_line(&app.query, app.query_cursor),
             )?;
         }
     }
@@ -709,6 +863,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
         KeyCode::Enter => return Ok(app.selected_output()),
         KeyCode::Esc => bail!("cancelled"),
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => bail!("cancelled"),
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(),
+        KeyCode::Home => app.move_cursor_home(),
+        KeyCode::End => app.move_cursor_end(),
         KeyCode::Up => {
             let wrap = matches!(app.mode, PickerMode::Files);
             app.selected = if reverse_history {
@@ -741,19 +899,23 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
                 move_selection_down(app.selected, app.result_len(), wrap)
             };
         }
-        KeyCode::Backspace => {
-            if !app.query.is_empty() {
-                app.query.pop();
-                app.selected = 0;
-                app.scroll = 0;
-                app.refresh()?;
-            }
-        }
-        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.query.push(ch);
-            app.selected = 0;
-            app.scroll = 0;
-            app.refresh()?;
+        KeyCode::Backspace => app.delete_backward()?,
+        KeyCode::Delete => app.delete_forward()?,
+        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_home(),
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_end(),
+        KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_left(),
+        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_right(),
+        KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => app.kill_to_end()?,
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => app.kill_to_start()?,
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => app.delete_forward()?,
+        KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => app.move_cursor_word_left(),
+        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => app.move_cursor_word_right(),
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::ALT) => app.kill_word_right()?,
+        KeyCode::Char(ch)
+            if !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            app.insert_char(ch)?;
         }
         _ => {}
     }
