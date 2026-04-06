@@ -300,6 +300,19 @@ impl App {
         self.query.replace_range(start..end, "");
         self.reset_after_query_edit()
     }
+
+    fn kill_word_left(&mut self) -> Result<()> {
+        let end = self.query_byte_index();
+        let end_char = self.query_cursor;
+        self.move_cursor_word_left();
+        if self.query_cursor == end_char {
+            return Ok(());
+        }
+
+        let start = self.query_byte_index();
+        self.query.replace_range(start..end, "");
+        self.reset_after_query_edit()
+    }
 }
 
 fn parse_history_direction(value: &str) -> HistoryDirection {
@@ -859,15 +872,143 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
 
     let reverse_history = matches!(app.mode, PickerMode::History);
 
-    match key.code {
-        KeyCode::Enter => return Ok(app.selected_output()),
-        KeyCode::Esc => bail!("cancelled"),
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => bail!("cancelled"),
-        KeyCode::Left => app.move_cursor_left(),
-        KeyCode::Right => app.move_cursor_right(),
-        KeyCode::Home => app.move_cursor_home(),
-        KeyCode::End => app.move_cursor_end(),
-        KeyCode::Up => {
+    match key {
+        KeyEvent {
+            code: KeyCode::Enter,
+            ..
+        } => return Ok(app.selected_output()),
+        KeyEvent {
+            code: KeyCode::Esc, ..
+        } => bail!("cancelled"),
+        KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) => bail!("cancelled"),
+        KeyEvent {
+            code: KeyCode::Char('\u{0001}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => app.move_cursor_home(),
+        KeyEvent {
+            code: KeyCode::Char('a'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_home(),
+        KeyEvent {
+            code: KeyCode::Char('\u{0002}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('b'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Left,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => app.move_cursor_left(),
+        KeyEvent {
+            code: KeyCode::Char('\u{0004}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('d'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Delete,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => app.delete_forward()?,
+        KeyEvent {
+            code: KeyCode::Char('\u{0005}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => app.move_cursor_end(),
+        KeyEvent {
+            code: KeyCode::Char('e'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_end(),
+        KeyEvent {
+            code: KeyCode::Char('\u{0006}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('f'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Right,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => app.move_cursor_right(),
+        KeyEvent {
+            code: KeyCode::Char('\u{0008}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('h'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Backspace,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => app.delete_backward()?,
+        KeyEvent {
+            code: KeyCode::Char('\u{000b}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('k'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => app.kill_to_end()?,
+        KeyEvent {
+            code: KeyCode::Char('\u{000e}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('n'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Down,
+            ..
+        } => {
+            let wrap = matches!(app.mode, PickerMode::Files);
+            app.selected = if reverse_history {
+                move_selection_up(app.selected, app.result_len(), wrap)
+            } else {
+                move_selection_down(app.selected, app.result_len(), wrap)
+            };
+        }
+        KeyEvent {
+            code: KeyCode::Char('\u{0010}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('p'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Up, ..
+        } => {
             let wrap = matches!(app.mode, PickerMode::Files);
             app.selected = if reverse_history {
                 move_selection_down(app.selected, app.result_len(), wrap)
@@ -875,45 +1016,83 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
                 move_selection_up(app.selected, app.result_len(), wrap)
             };
         }
-        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let wrap = matches!(app.mode, PickerMode::Files);
-            app.selected = if reverse_history {
-                move_selection_down(app.selected, app.result_len(), wrap)
-            } else {
-                move_selection_up(app.selected, app.result_len(), wrap)
-            };
+        KeyEvent {
+            code: KeyCode::Char('\u{0015}'),
+            modifiers: KeyModifiers::NONE,
+            ..
         }
-        KeyCode::Down => {
-            let wrap = matches!(app.mode, PickerMode::Files);
-            app.selected = if reverse_history {
-                move_selection_up(app.selected, app.result_len(), wrap)
-            } else {
-                move_selection_down(app.selected, app.result_len(), wrap)
-            };
+        | KeyEvent {
+            code: KeyCode::Char('u'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => app.kill_to_start()?,
+        KeyEvent {
+            code: KeyCode::Char('\u{0017}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => app.kill_word_left()?,
+        KeyEvent {
+            code: KeyCode::Char('w'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => app.kill_word_left()?,
+        KeyEvent {
+            code: KeyCode::Backspace,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) => app.kill_word_left()?,
+        KeyEvent {
+            code: KeyCode::Char('h'),
+            modifiers,
+            ..
+        } if modifiers == (KeyModifiers::CONTROL | KeyModifiers::ALT) => app.kill_word_left()?,
+        KeyEvent {
+            code: KeyCode::Delete,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) => app.kill_word_right()?,
+        KeyEvent {
+            code: KeyCode::Char('b'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) => app.move_cursor_word_left(),
+        KeyEvent {
+            code: KeyCode::Left,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) || modifiers.contains(KeyModifiers::CONTROL) => {
+            app.move_cursor_word_left()
         }
-        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let wrap = matches!(app.mode, PickerMode::Files);
-            app.selected = if reverse_history {
-                move_selection_up(app.selected, app.result_len(), wrap)
-            } else {
-                move_selection_down(app.selected, app.result_len(), wrap)
-            };
+        KeyEvent {
+            code: KeyCode::Char('d'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) => app.kill_word_right()?,
+        KeyEvent {
+            code: KeyCode::Char('f'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) => app.move_cursor_word_right(),
+        KeyEvent {
+            code: KeyCode::Right,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) || modifiers.contains(KeyModifiers::CONTROL) => {
+            app.move_cursor_word_right()
         }
-        KeyCode::Backspace => app.delete_backward()?,
-        KeyCode::Delete => app.delete_forward()?,
-        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_home(),
-        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_end(),
-        KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_left(),
-        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_cursor_right(),
-        KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => app.kill_to_end()?,
-        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => app.kill_to_start()?,
-        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => app.delete_forward()?,
-        KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => app.move_cursor_word_left(),
-        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => app.move_cursor_word_right(),
-        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::ALT) => app.kill_word_right()?,
-        KeyCode::Char(ch)
-            if !key.modifiers.contains(KeyModifiers::CONTROL)
-                && !key.modifiers.contains(KeyModifiers::ALT) =>
+        KeyEvent {
+            code: KeyCode::Home,
+            ..
+        } => app.move_cursor_home(),
+        KeyEvent {
+            code: KeyCode::End, ..
+        } => app.move_cursor_end(),
+        KeyEvent {
+            code: KeyCode::Char(ch),
+            modifiers,
+            ..
+        } if !modifiers.contains(KeyModifiers::CONTROL)
+            && !modifiers.contains(KeyModifiers::ALT) =>
         {
             app.insert_char(ch)?;
         }
