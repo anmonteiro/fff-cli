@@ -646,10 +646,10 @@ fn render(app: &mut App, ui: &mut TerminalUi) -> Result<()> {
         PickerMode::History => {
             let view = app.history.as_ref().context("missing history view")?;
             let header_row = area.row + 1;
-            let list_row = area.row + 2;
             let prompt_row = area.row + area.height.saturating_sub(2);
+            let list_bottom_row = prompt_row.saturating_sub(1);
             let visible_count = max(1, area.height.saturating_sub(4) as usize);
-            app.scroll = ensure_selection_visible(app.selected, app.scroll, visible_count);
+            app.scroll = app.selected.min(view.matches.len().saturating_sub(1));
 
             let right_plain = format!("{} shown", view.matches.len());
             let header = format!(
@@ -659,7 +659,7 @@ fn render(app: &mut App, ui: &mut TerminalUi) -> Result<()> {
             draw_inner_line(&mut *ui.output, header_row, 1, content_width, &header)?;
 
             for row_offset in 0..visible_count {
-                let screen_row = list_row + row_offset as u16;
+                let screen_row = list_bottom_row.saturating_sub(row_offset as u16);
                 let idx = app.scroll + row_offset;
                 if let Some(item) = view.matches.get(idx) {
                     let line = history_line(item, idx == app.selected, content_width as usize);
