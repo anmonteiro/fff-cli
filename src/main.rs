@@ -230,12 +230,6 @@ impl App {
         self.reset_after_query_edit()
     }
 
-    fn kill_to_end(&mut self) -> Result<()> {
-        let start = self.query_byte_index();
-        self.query.truncate(start);
-        self.reset_after_query_edit()
-    }
-
     fn kill_to_start(&mut self) -> Result<()> {
         let end = self.query_byte_index();
         self.query.replace_range(..end, "");
@@ -966,22 +960,22 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
             ..
         } => app.delete_backward()?,
         KeyEvent {
-            code: KeyCode::Char('\u{000b}'),
-            modifiers: KeyModifiers::NONE,
-            ..
-        }
-        | KeyEvent {
-            code: KeyCode::Char('k'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        } => app.kill_to_end()?,
-        KeyEvent {
             code: KeyCode::Char('\u{000e}'),
             modifiers: KeyModifiers::NONE,
             ..
         }
         | KeyEvent {
+            code: KeyCode::Char('\u{000a}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
             code: KeyCode::Char('n'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('j'),
             modifiers: KeyModifiers::CONTROL,
             ..
         }
@@ -1002,7 +996,17 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
             ..
         }
         | KeyEvent {
+            code: KeyCode::Char('\u{000b}'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
             code: KeyCode::Char('p'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('k'),
             modifiers: KeyModifiers::CONTROL,
             ..
         }
