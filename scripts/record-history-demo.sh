@@ -16,9 +16,10 @@ FFF_BIN="$ROOT/target/release/fff"
 PROMPT_TEXT="~/m/d/n/fff-tui % "
 START_FRAME=6
 FRAME_COUNT=24
-MP4_WIDTH=840
-GIF_WIDTH=560
-STILL_AT=1.1
+MP4_WIDTH=1080
+GIF_WIDTH=720
+STILL_AT=1.7
+MAX_CAPTURE_FRAMES=40
 
 send_chars() {
   local text="$1"
@@ -119,7 +120,7 @@ chmod +x "$TMP_DEMO_DIR/history-demo.sh"
 
 osascript <<APPLESCRIPT >/dev/null
 do shell script "rm -f " & quoted form of "$SOCK"
-do shell script quoted form of POSIX path of (POSIX file "$KITTY_BIN") & " --single-instance=no -o allow_remote_control=socket-only --listen-on=unix:$SOCK -o update_window_title=no -o background_opacity=1.0 -o dynamic_background_opacity=no -o background_blur=0 -o font_size=22 -o initial_window_width=88c -o initial_window_height=12c -T $TITLE sh -lc 'exec $TMP_DEMO_DIR/history-demo.sh' >/dev/null 2>&1 &"
+do shell script quoted form of POSIX path of (POSIX file "$KITTY_BIN") & " --single-instance=no -o allow_remote_control=socket-only --listen-on=unix:$SOCK -o update_window_title=no -o background_opacity=1.0 -o dynamic_background_opacity=no -o background_blur=0 -o font_size=24 -o initial_window_width=84c -o initial_window_height=11c -T $TITLE sh -lc 'exec $TMP_DEMO_DIR/history-demo.sh' >/dev/null 2>&1 &"
 delay 1
 tell application "System Events"
   if exists process "kitty" then
@@ -142,8 +143,8 @@ tmp_frames="$(mktemp -d /tmp/fff-history-demo-frames.XXXXXX)"
 sleep 0.8
 
 (
-  for i in $(seq 0 119); do
-    capture_window_frame "$window_id" "$tmp_frames/frame_$(printf '%04d' "$i").png"
+  for ((i = 0; i < MAX_CAPTURE_FRAMES; i++)); do
+    capture_window_frame "$window_id" "$tmp_frames/frame_$(printf '%04d' "$i").png" || break
     sleep 0.1
   done
 ) &
@@ -170,7 +171,7 @@ wait "$cap_pid"
 ffmpeg -y -framerate 10 -start_number "$START_FRAME" -i "$tmp_frames/frame_%04d.png" -frames:v "$FRAME_COUNT" -vf "scale=$MP4_WIDTH:-2:flags=lanczos,format=yuv420p" "$OUT" >/tmp/fff-history-demo-kitty.log 2>&1
 ffmpeg -y -i "$OUT" -vf "fps=10,scale=$GIF_WIDTH:-1:flags=lanczos" "$TMP_DEMO_DIR/gif-frame-%03d.png" >/tmp/fff-history-demo-gif-frames.log 2>&1
 magick -dispose previous -delay 10 -loop 0 "$TMP_DEMO_DIR"/gif-frame-*.png "${OUT%.mp4}.gif"
-ffmpeg -y -ss "$STILL_AT" -i "$OUT" -frames:v 1 "$FRAME" >/tmp/fff-history-demo-kitty-frame.log 2>&1
+ffmpeg -y -ss "$STILL_AT" -i "$OUT" -frames:v 1 -update 1 "$FRAME" >/tmp/fff-history-demo-kitty-frame.log 2>&1
 rm -rf "$tmp_frames"
 
 echo "$OUT"
