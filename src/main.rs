@@ -1,6 +1,10 @@
 use std::cmp::max;
+#[cfg(unix)]
+use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{self, IsTerminal, Read, Write};
+#[cfg(unix)]
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -100,6 +104,20 @@ struct TerminalUi {
     last_size: Option<(u16, u16)>,
 }
 
+#[cfg(unix)]
+struct StdinTtyGuard {
+    saved_stdin: OwnedFd,
+}
+
+#[cfg(unix)]
+impl Drop for StdinTtyGuard {
+    fn drop(&mut self) {
+        // Restore the original stdin fd after the picker exits so command
+        // substitution and pipes continue working for the parent shell.
+        let _ = unsafe { dup2(self.saved_stdin.as_raw_fd(), io::stdin().as_raw_fd()) };
+    }
+}
+
 impl App {
     fn new_files(base_path: PathBuf) -> Result<Self> {
         let engine = FileSearchEngine::new(base_path)?;
@@ -190,6 +208,41 @@ fn interactive_output() -> Result<Box<dyn Write>> {
         .open("/dev/tty")
         .context("failed to open /dev/tty for interactive output")?;
     Ok(Box::new(tty))
+}
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn dup(fd: i32) -> i32;
+    fn dup2(src: i32, dst: i32) -> i32;
+}
+
+#[cfg(unix)]
+fn attach_tty_to_stdin() -> Result<Option<StdinTtyGuard>> {
+    if io::stdin().is_terminal() {
+        return Ok(None);
+    }
+
+    let tty = File::open("/dev/tty").context("failed to open /dev/tty for interactive input")?;
+    let stdin_fd = io::stdin().as_raw_fd();
+    let saved_stdin = unsafe { dup(stdin_fd) };
+    if saved_stdin < 0 {
+        return Err(io::Error::last_os_error()).context("failed to duplicate stdin");
+    }
+
+    if unsafe { dup2(tty.as_raw_fd(), stdin_fd) } < 0 {
+        let error = io::Error::last_os_error();
+        let _ = unsafe { OwnedFd::from_raw_fd(saved_stdin) };
+        return Err(error).context("failed to attach /dev/tty to stdin");
+    }
+
+    Ok(Some(StdinTtyGuard {
+        saved_stdin: unsafe { OwnedFd::from_raw_fd(saved_stdin) },
+    }))
+}
+
+#[cfg(not(unix))]
+fn attach_tty_to_stdin() -> Result<Option<()>> {
+    Ok(None)
 }
 
 fn move_to(out: &mut dyn Write, row: u16, col: u16) -> io::Result<()> {
@@ -727,6 +780,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> Result<Option<String>> {
 }
 
 fn run(app: &mut App) -> Result<Option<String>> {
+    let _stdin_guard = attach_tty_to_stdin()?;
     enable_raw_mode()?;
     let mut ui = TerminalUi {
         output: interactive_output()?,
