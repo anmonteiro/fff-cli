@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::fmt::Write as _;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -314,7 +315,10 @@ impl FileSearchEngine {
 
         let mut hasher = Sha1::new();
         hasher.update(base_path_str.as_bytes());
-        let key = format!("{:x}", hasher.finalize());
+        let mut key = String::with_capacity(40);
+        for byte in hasher.finalize() {
+            write!(&mut key, "{byte:02x}").expect("writing to String cannot fail");
+        }
         let key = &key[..12];
 
         let picker = SharedPicker::default();
