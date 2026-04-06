@@ -14,12 +14,12 @@ SUFFIX=" build"
 TMP_DEMO_DIR="$(mktemp -d /tmp/fff-history-demo.XXXXXX)"
 FFF_BIN="$ROOT/target/release/fff"
 PROMPT_TEXT="~/m/d/n/fff-tui % "
-START_FRAME=6
-FRAME_COUNT=24
+START_FRAME=8
+FRAME_COUNT=60
 MP4_WIDTH=1080
 GIF_WIDTH=720
-STILL_AT=1.7
-MAX_CAPTURE_FRAMES=40
+STILL_AT=2.5
+MAX_CAPTURE_FRAMES=90
 
 send_chars() {
   local text="$1"
@@ -120,7 +120,7 @@ chmod +x "$TMP_DEMO_DIR/history-demo.sh"
 
 osascript <<APPLESCRIPT >/dev/null
 do shell script "rm -f " & quoted form of "$SOCK"
-do shell script quoted form of POSIX path of (POSIX file "$KITTY_BIN") & " --single-instance=no -o allow_remote_control=socket-only --listen-on=unix:$SOCK -o update_window_title=no -o background_opacity=1.0 -o dynamic_background_opacity=no -o background_blur=0 -o font_size=24 -o initial_window_width=84c -o initial_window_height=11c -T $TITLE sh -lc 'exec $TMP_DEMO_DIR/history-demo.sh' >/dev/null 2>&1 &"
+do shell script quoted form of POSIX path of (POSIX file "$KITTY_BIN") & " --single-instance=no -o allow_remote_control=socket-only --listen-on=unix:$SOCK -o update_window_title=no -o background_opacity=1.0 -o dynamic_background_opacity=no -o background_blur=0 -o font_size=26 -o initial_window_width=82c -o initial_window_height=11c -T $TITLE sh -lc 'exec $TMP_DEMO_DIR/history-demo.sh' >/dev/null 2>&1 &"
 delay 1
 tell application "System Events"
   if exists process "kitty" then
@@ -160,12 +160,12 @@ tell application "System Events"
   end if
 end tell
 APPLESCRIPT
-send_chars "$QUERY" 0.22
-sleep 0.8
-send_chars "$SUFFIX" 0.18
-sleep 1.2
+send_chars "$QUERY" 0.35
+sleep 1.1
+send_chars "$SUFFIX" 0.3
+sleep 1.8
 "$KITTY_RC_BIN" @ --to "unix:$SOCK" send-key enter >/dev/null
-sleep 1.4
+sleep 2.2
 
 wait "$cap_pid"
 ffmpeg -y -framerate 10 -start_number "$START_FRAME" -i "$tmp_frames/frame_%04d.png" -frames:v "$FRAME_COUNT" -vf "scale=$MP4_WIDTH:-2:flags=lanczos,format=yuv420p" "$OUT" >/tmp/fff-history-demo-kitty.log 2>&1
