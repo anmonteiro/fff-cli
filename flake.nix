@@ -76,7 +76,7 @@
 
           nativeBuildInputs = with pkgs; [
             pkg-config
-            zig
+            zig_0_15
             llvmPackages.libclang
           ];
 
@@ -109,7 +109,7 @@
               rustc
               rustfmt
               clippy
-              zig
+              zig_0_15
               pkg-config
               openssl
             ]
