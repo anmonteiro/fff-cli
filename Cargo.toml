@@ -15,8 +15,8 @@ anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "env"] }
 crossterm = { version = "0.29", features = ["use-dev-tty"] }
 dirs = "6.0"
-fff = { package = "fff-search", git = "https://github.com/dmtrKovalenko/fff.nvim", rev = "db4cd2825c32e5e53e12bb8af106ff724d33904e", features = ["zlob"] }
-fff-query-parser = { git = "https://github.com/dmtrKovalenko/fff.nvim", package = "fff-query-parser", rev = "db4cd2825c32e5e53e12bb8af106ff724d33904e" }
+fff = { package = "fff-search", git = "https://github.com/dmtrKovalenko/fff.nvim", rev = "2465c2cad624cd43f9cedcb8bb852d95dd603788", features = ["zlob"] }
+fff-query-parser = { git = "https://github.com/dmtrKovalenko/fff.nvim", package = "fff-query-parser", rev = "2465c2cad624cd43f9cedcb8bb852d95dd603788" }
 git2 = "0.20.2"
 sha1 = "0.11"
 tempfile = "3.23"

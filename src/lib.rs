@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use fff::file_picker::{FFFMode, FilePicker, FilePickerOptions, FuzzySearchOptions, scan_files};
+use fff::file_picker::{FFFMode, FilePicker, FilePickerOptions, FuzzySearchOptions};
 use fff::frecency::FrecencyTracker;
-use fff::grep::{GrepMode, GrepSearchOptions, grep_search, parse_grep_query};
+use fff::grep::{GrepMode, GrepSearchOptions, parse_grep_query};
 use fff::query_tracker::QueryTracker;
 use fff::shared::{SharedFrecency, SharedPicker, SharedQueryTracker};
-use fff::{ContentCacheBudget, PaginationArgs, QueryParser};
+use fff::{PaginationArgs, QueryParser};
 use git2::Status;
 use sha1::{Digest, Sha1};
 use tempfile::TempDir;
@@ -354,7 +354,8 @@ impl FileSearchEngine {
             frecency,
             FilePickerOptions {
                 base_path: base_path_str.clone(),
-                warmup_mmap_cache: false,
+                enable_mmap_cache: false,
+                enable_content_indexing: false,
                 mode: FFFMode::Neovim,
                 cache_budget: None,
                 watch: true,
@@ -384,8 +385,7 @@ impl FileSearchEngine {
         let query_tracker = tracker_guard.as_ref();
         let parser = QueryParser::default();
         let parsed = parser.parse(query);
-        let result = FilePicker::fuzzy_search(
-            picker.get_files(),
+        let result = picker.fuzzy_search(
             &parsed,
             query_tracker,
             FuzzySearchOptions {
@@ -405,14 +405,14 @@ impl FileSearchEngine {
             .items
             .into_iter()
             .map(|item| FileMatch {
-                path: item.path.clone(),
-                relative_path: item.relative_path.clone(),
-                file_name: item.file_name.clone(),
+                path: item.absolute_path(picker, &self.base_path),
+                relative_path: item.relative_path(picker),
+                file_name: item.file_name(picker),
                 git: git_kind(item.git_status),
                 badge: frecency_badge(
-                    item.total_frecency_score,
-                    item.access_frecency_score,
-                    item.modification_frecency_score,
+                    item.total_frecency_score(),
+                    item.access_frecency_score.into(),
+                    item.modification_frecency_score.into(),
                 ),
             })
             .collect::<Vec<_>>();
@@ -448,7 +448,8 @@ impl HistorySearchEngine {
 
         let mut picker = FilePicker::new(FilePickerOptions {
             base_path: temp_dir.path().display().to_string(),
-            warmup_mmap_cache: false,
+            enable_mmap_cache: false,
+            enable_content_indexing: false,
             mode: FFFMode::Neovim,
             cache_budget: None,
             watch: false,
@@ -497,6 +498,8 @@ impl HistorySearchEngine {
                 before_context: 0,
                 after_context: 0,
                 classify_definitions: false,
+                trim_whitespace: false,
+                abort_signal: None,
             },
         );
 
@@ -548,19 +551,22 @@ pub fn grep_cli_search(options: &GrepCliOptions) -> Result<GrepCliResult> {
         (canonical_path, None)
     };
 
-    let mut files = scan_files(&base_path);
-    if let Some(target_file) = target_file.as_ref() {
-        files.retain(|file| file.path == *target_file);
-    }
     let parsed = parse_grep_query(&options.query);
     let mode = match options.mode {
         GrepCliMode::PlainText => GrepMode::PlainText,
         GrepCliMode::Regex => GrepMode::Regex,
         GrepCliMode::Fuzzy => GrepMode::Fuzzy,
     };
-    let budget = ContentCacheBudget::default();
-    let result = grep_search(
-        &files,
+    let mut picker = FilePicker::new(FilePickerOptions {
+        base_path: base_path.display().to_string(),
+        enable_mmap_cache: false,
+        enable_content_indexing: false,
+        mode: FFFMode::Ai,
+        cache_budget: None,
+        watch: false,
+    })?;
+    picker.collect_files()?;
+    let result = picker.grep(
         &parsed,
         &GrepSearchOptions {
             max_file_size: options.max_file_size,
@@ -573,18 +579,21 @@ pub fn grep_cli_search(options: &GrepCliOptions) -> Result<GrepCliResult> {
             before_context: options.before_context,
             after_context: options.after_context,
             classify_definitions: false,
+            trim_whitespace: false,
+            abort_signal: None,
         },
-        &budget,
-        None,
-        None,
-        None,
     );
 
     let matches = result
         .matches
         .into_iter()
+        .filter(|item| {
+            target_file.as_ref().is_none_or(|target| {
+                result.files[item.file_index].absolute_path(&picker, &base_path) == *target
+            })
+        })
         .map(|item| {
-            let path = result.files[item.file_index].relative_path.clone();
+            let path = result.files[item.file_index].relative_path(&picker);
             GrepCliMatch {
                 path,
                 line_number: item.line_number,
@@ -601,11 +610,17 @@ pub fn grep_cli_search(options: &GrepCliOptions) -> Result<GrepCliResult> {
         })
         .collect::<Vec<_>>();
 
+    let files_with_matches = matches
+        .iter()
+        .map(|item| item.path.as_str())
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+
     Ok(GrepCliResult {
         matches,
         total_files: result.total_files,
         total_files_searched: result.total_files_searched,
-        files_with_matches: result.files_with_matches,
+        files_with_matches,
     })
 }
 

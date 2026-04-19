@@ -9,7 +9,7 @@
   inputs = {
     nixpkgs.url = "github:nix-ocaml/nix-overlays";
     fff = {
-      url = "github:dmtrKovalenko/fff.nvim/db4cd2825c32e5e53e12bb8af106ff724d33904e";
+      url = "github:dmtrKovalenko/fff.nvim";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -48,18 +48,21 @@
               cargo_toml.write_text(
                   cargo_toml.read_text()
                   .replace(
-                      'fff = { package = "fff-search", git = "https://github.com/dmtrKovalenko/fff.nvim", rev = "db4cd2825c32e5e53e12bb8af106ff724d33904e", features = ["zlob"] }',
+                      'fff = { package = "fff-search", git = "https://github.com/dmtrKovalenko/fff.nvim", rev = "2465c2cad624cd43f9cedcb8bb852d95dd603788", features = ["zlob"] }',
                       'fff = { package = "fff-search", path = ".nix-fff/crates/fff-core", features = ["zlob"] }',
                   )
                   .replace(
-                      'fff-query-parser = { git = "https://github.com/dmtrKovalenko/fff.nvim", package = "fff-query-parser", rev = "db4cd2825c32e5e53e12bb8af106ff724d33904e" }',
+                      'fff-query-parser = { git = "https://github.com/dmtrKovalenko/fff.nvim", package = "fff-query-parser", rev = "2465c2cad624cd43f9cedcb8bb852d95dd603788" }',
                       'fff-query-parser = { package = "fff-query-parser", path = ".nix-fff/crates/fff-query-parser" }',
                   )
               )
 
               cargo_lock.write_text(
                   cargo_lock.read_text().replace(
-                      'source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=db4cd2825c32e5e53e12bb8af106ff724d33904e#db4cd2825c32e5e53e12bb8af106ff724d33904e"\n',
+                      'source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=2465c2cad624cd43f9cedcb8bb852d95dd603788#2465c2cad624cd43f9cedcb8bb852d95dd603788"\n',
+                      "",
+                  ).replace(
+                      'source = "git+https://github.com/dmtrKovalenko/fff.nvim#2465c2cad624cd43f9cedcb8bb852d95dd603788"\n',
                       "",
                   )
               )
@@ -67,30 +70,28 @@
             '';
           in
           pkgs.rustPlatform.buildRustPackage {
-          pname = "fff-cli";
-          version = "0.1.0";
-          src = nixSrc;
-          cargoLock = {
-            lockFile = nixSrc + "/Cargo.lock";
+            pname = "fff-cli";
+            version = "0.1.0";
+            src = nixSrc;
+            cargoLock = {
+              lockFile = nixSrc + "/Cargo.lock";
+            };
+
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              zig_0_15
+              llvmPackages.libclang
+            ];
+
+            buildInputs = with pkgs; [ openssl ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ libiconv ];
+
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+            dontUseZigConfigure = true;
+            dontUseZigBuild = true;
+            dontUseZigCheck = true;
+            dontUseZigInstall = true;
+            doCheck = false;
           };
-
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            zig_0_15
-            llvmPackages.libclang
-          ];
-
-          buildInputs =
-            with pkgs;
-            [ openssl ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ libiconv ];
-
-          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-          dontUseZigConfigure = true;
-          dontUseZigBuild = true;
-          dontUseZigCheck = true;
-          dontUseZigInstall = true;
-          doCheck = false;
-        };
       });
 
       apps = forAllSystems (pkgs: {
