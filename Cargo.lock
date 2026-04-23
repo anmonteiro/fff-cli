@@ -580,8 +580,8 @@ dependencies = [
 
 [[package]]
 name = "fff-grep"
-version = "0.6.0"
-source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=2465c2cad624cd43f9cedcb8bb852d95dd603788#2465c2cad624cd43f9cedcb8bb852d95dd603788"
+version = "0.6.4"
+source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=4b13a91aa57c5e9ed32ee381d9ee521800818370#4b13a91aa57c5e9ed32ee381d9ee521800818370"
 dependencies = [
  "bstr",
  "memchr",
@@ -602,16 +602,16 @@ dependencies = [
 
 [[package]]
 name = "fff-query-parser"
-version = "0.6.0"
-source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=2465c2cad624cd43f9cedcb8bb852d95dd603788#2465c2cad624cd43f9cedcb8bb852d95dd603788"
+version = "0.6.4"
+source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=4b13a91aa57c5e9ed32ee381d9ee521800818370#4b13a91aa57c5e9ed32ee381d9ee521800818370"
 dependencies = [
  "zlob",
 ]
 
 [[package]]
 name = "fff-search"
-version = "0.6.0"
-source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=2465c2cad624cd43f9cedcb8bb852d95dd603788#2465c2cad624cd43f9cedcb8bb852d95dd603788"
+version = "0.6.4"
+source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=4b13a91aa57c5e9ed32ee381d9ee521800818370#4b13a91aa57c5e9ed32ee381d9ee521800818370"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -1362,9 +1362,9 @@ checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.113"
+version = "0.9.114"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad2f2c0eba47118757e4c6d2bff2838f3e0523380021356e7875e858372ce644"
+checksum = "13ce1245cd07fcc4cfdb438f7507b0c7e4f3849a69fd84d52374c66d83741bb6"
 dependencies = [
  "cc",
  "libc",
@@ -2099,9 +2099,9 @@ dependencies = [
 
 [[package]]
 name = "typenum"
-version = "1.19.0"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
+checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "unicode-ident"
@@ -2729,9 +2729,9 @@ dependencies = [
 
 [[package]]
 name = "zlob"
-version = "1.3.0"
+version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07934fb13f0f4e14281bab6b0e984cfc03891d2cf5b0a8bd0ab14fd240e21106"
+checksum = "41f3522fa9701b74ec72758aedb96da278f6e0533bc16b6a79090bfb465d4661"
 dependencies = [
  "bindgen",
  "bitflags 2.11.1",

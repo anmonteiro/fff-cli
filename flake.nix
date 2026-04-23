@@ -40,30 +40,32 @@
 
               python - "$out/Cargo.toml" "$out/Cargo.lock" <<'PY'
               from pathlib import Path
+              import re
               import sys
 
               cargo_toml = Path(sys.argv[1])
               cargo_lock = Path(sys.argv[2])
 
               cargo_toml.write_text(
-                  cargo_toml.read_text()
-                  .replace(
-                      'fff = { package = "fff-search", git = "https://github.com/dmtrKovalenko/fff.nvim", rev = "2465c2cad624cd43f9cedcb8bb852d95dd603788", features = ["zlob"] }',
+                  re.sub(
+                      r'^fff = \{ package = "fff-search", git = "https://github.com/dmtrKovalenko/fff\.nvim", rev = "[^"]+", features = \["zlob"\] \}$',
                       'fff = { package = "fff-search", path = ".nix-fff/crates/fff-core", features = ["zlob"] }',
-                  )
-                  .replace(
-                      'fff-query-parser = { git = "https://github.com/dmtrKovalenko/fff.nvim", package = "fff-query-parser", rev = "2465c2cad624cd43f9cedcb8bb852d95dd603788" }',
-                      'fff-query-parser = { package = "fff-query-parser", path = ".nix-fff/crates/fff-query-parser" }',
+                      re.sub(
+                          r'^fff-query-parser = \{ git = "https://github.com/dmtrKovalenko/fff\.nvim", package = "fff-query-parser", rev = "[^"]+" \}$',
+                          'fff-query-parser = { package = "fff-query-parser", path = ".nix-fff/crates/fff-query-parser" }',
+                          cargo_toml.read_text(),
+                          flags=re.MULTILINE,
+                      ),
+                      flags=re.MULTILINE,
                   )
               )
 
               cargo_lock.write_text(
-                  cargo_lock.read_text().replace(
-                      'source = "git+https://github.com/dmtrKovalenko/fff.nvim?rev=2465c2cad624cd43f9cedcb8bb852d95dd603788#2465c2cad624cd43f9cedcb8bb852d95dd603788"\n',
+                  re.sub(
+                      r'^source = "git\+https://github.com/dmtrKovalenko/fff\.nvim(?:\?rev=[^"#]+)?#[^"]+"\n',
                       "",
-                  ).replace(
-                      'source = "git+https://github.com/dmtrKovalenko/fff.nvim#2465c2cad624cd43f9cedcb8bb852d95dd603788"\n',
-                      "",
+                      cargo_lock.read_text(),
+                      flags=re.MULTILINE,
                   )
               )
               PY
@@ -79,13 +81,17 @@
 
             nativeBuildInputs = with pkgs; [
               pkg-config
-              zig_0_15
+              zig_0_16
               llvmPackages.libclang
             ];
 
             buildInputs = with pkgs; [ openssl ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ libiconv ];
 
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+            preBuild = ''
+              export HOME="$TMPDIR"
+              export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global-cache"
+            '';
             dontUseZigConfigure = true;
             dontUseZigBuild = true;
             dontUseZigCheck = true;
@@ -110,7 +116,7 @@
               rustc
               rustfmt
               clippy
-              zig_0_15
+              zig_0_16
               pkg-config
               openssl
             ]
