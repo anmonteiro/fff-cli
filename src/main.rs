@@ -72,7 +72,7 @@ struct Cli {
 
 enum PickerEngine {
     Files(FileSearchEngine),
-    History(HistorySearchEngine),
+    History(Box<HistorySearchEngine>),
 }
 
 struct App {
@@ -129,7 +129,7 @@ impl App {
         let engine = HistorySearchEngine::new(commands)?;
         let mut app = Self {
             mode: PickerMode::History,
-            engine: PickerEngine::History(engine),
+            engine: PickerEngine::History(Box::new(engine)),
             query_cursor: query.chars().count(),
             query,
             selected: 0,

@@ -9,7 +9,7 @@ use fff::file_picker::{FFFMode, FilePicker, FilePickerOptions, FuzzySearchOption
 use fff::frecency::FrecencyTracker;
 use fff::grep::{GrepMode, GrepSearchOptions, parse_grep_query};
 use fff::query_tracker::QueryTracker;
-use fff::shared::{SharedFrecency, SharedPicker, SharedQueryTracker};
+use fff::shared::{SharedFilePicker, SharedFrecency, SharedQueryTracker};
 use fff::{PaginationArgs, QueryParser};
 use git2::Status;
 use sha1::{Digest, Sha1};
@@ -299,7 +299,7 @@ pub fn ensure_selection_visible(selected: usize, scroll: usize, visible_count: u
 pub struct FileSearchEngine {
     base_path: PathBuf,
     root_display: String,
-    picker: SharedPicker,
+    picker: SharedFilePicker,
     query_tracker: SharedQueryTracker,
 }
 
@@ -321,7 +321,7 @@ impl FileSearchEngine {
         }
         let key = &key[..12];
 
-        let picker = SharedPicker::default();
+        let picker = SharedFilePicker::default();
         let frecency = SharedFrecency::default();
         let query_tracker = SharedQueryTracker::default();
 
