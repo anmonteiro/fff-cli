@@ -10,7 +10,6 @@
     nixpkgs.url = "github:nix-ocaml/nix-overlays";
     fff = {
       url = "github:dmtrKovalenko/fff.nvim";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -27,9 +26,33 @@
         "x86_64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      patchFffCargoLock = ''
+        perl -0pi -e '
+          s/name = "fff-c"\nversion = "0\.8\.1"/name = "fff-c"\nversion = "0.8.2"/g;
+          s/name = "fff-grep"\nversion = "0\.8\.1"/name = "fff-grep"\nversion = "0.8.2"/g;
+          s/name = "fff-mcp"\nversion = "0\.8\.1"/name = "fff-mcp"\nversion = "0.8.2"/g;
+          s/name = "fff-nvim"\nversion = "0\.8\.1"/name = "fff-nvim"\nversion = "0.8.2"/g;
+          s/name = "fff-query-parser"\nversion = "0\.8\.1"/name = "fff-query-parser"\nversion = "0.8.2"/g;
+          s/name = "fff-search"\nversion = "0\.8\.1"/name = "fff-search"\nversion = "0.8.2"/g;
+        ' Cargo.lock
+      '';
     in
     {
+      sources = {
+        fff = fff.outPath;
+      };
+
       packages = forAllSystems (pkgs: {
+        fff-nvim = fff.outputs.packages.${pkgs.stdenv.hostPlatform.system}.default.overrideAttrs (old: {
+          cargoArtifacts = old.cargoArtifacts.overrideAttrs (depsOld: {
+            postPatch = (depsOld.postPatch or "") + patchFffCargoLock;
+          });
+          postPatch = (old.postPatch or "") + patchFffCargoLock;
+          postInstall = (old.postInstall or "") + ''
+            ln -sfn $out/lib/ $out/release
+          '';
+        });
+
         default =
           let
             nixSrc = pkgs.runCommand "fff-cli-src" { nativeBuildInputs = [ pkgs.python3 ]; } ''
@@ -48,10 +71,10 @@
 
               cargo_toml.write_text(
                   re.sub(
-                      r'^fff = \{ package = "fff-search", git = "https://github.com/dmtrKovalenko/fff\.nvim", rev = "[^"]+", features = \["zlob"\] \}$',
+                      r'^fff = \{ package = "fff-search", git = "https://github.com/dmtrKovalenko/fff\.nvim", (?:branch|rev) = "[^"]+", features = \["zlob"\] \}$',
                       'fff = { package = "fff-search", path = ".nix-fff/crates/fff-core", features = ["zlob"] }',
                       re.sub(
-                          r'^fff-query-parser = \{ git = "https://github.com/dmtrKovalenko/fff\.nvim", package = "fff-query-parser", rev = "[^"]+" \}$',
+                          r'^fff-query-parser = \{ git = "https://github.com/dmtrKovalenko/fff\.nvim", package = "fff-query-parser", (?:branch|rev) = "[^"]+" \}$',
                           'fff-query-parser = { package = "fff-query-parser", path = ".nix-fff/crates/fff-query-parser" }',
                           cargo_toml.read_text(),
                           flags=re.MULTILINE,
@@ -62,7 +85,7 @@
 
               cargo_lock.write_text(
                   re.sub(
-                      r'^source = "git\+https://github.com/dmtrKovalenko/fff\.nvim(?:\?rev=[^"#]+)?#[^"]+"\n',
+                      r'^source = "git\+https://github.com/dmtrKovalenko/fff\.nvim(?:\?(?:branch|rev)=[^"#]+)?#[^"]+"\n',
                       "",
                       cargo_lock.read_text(),
                       flags=re.MULTILINE,

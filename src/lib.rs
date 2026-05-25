@@ -359,6 +359,7 @@ impl FileSearchEngine {
                 mode: FFFMode::Neovim,
                 cache_budget: None,
                 watch: true,
+                follow_symlinks: false,
             },
         )?;
 
@@ -444,17 +445,12 @@ impl HistorySearchEngine {
             .iter()
             .map(|command| sanitize_history_display(command))
             .collect::<Vec<_>>();
-        let mut seen_paths = std::collections::HashSet::new();
         let mut search_paths = Vec::with_capacity(display_lines.len());
 
         for (idx, display) in display_lines.iter().enumerate() {
             let mut components = history_search_path_components(display);
-            let mut search_path = components.join("/");
-            if !seen_paths.insert(search_path.clone()) {
-                components.push(format!("{idx:08}"));
-                search_path = components.join("/");
-                seen_paths.insert(search_path.clone());
-            }
+            components.push(format!("{idx:08}"));
+            let search_path = components.join("/");
 
             let mut file_path = temp_dir.path().to_path_buf();
             for component in &components {
@@ -474,6 +470,7 @@ impl HistorySearchEngine {
             mode: FFFMode::Neovim,
             cache_budget: None,
             watch: false,
+            follow_symlinks: false,
         })?;
         picker.collect_files()?;
 
@@ -623,6 +620,7 @@ pub fn grep_cli_search(options: &GrepCliOptions) -> Result<GrepCliResult> {
         mode: FFFMode::Ai,
         cache_budget: None,
         watch: false,
+        follow_symlinks: false,
     })?;
     picker.collect_files()?;
     let result = picker.grep(
@@ -839,6 +837,23 @@ mod tests {
         assert_eq!(view.total_matched, 1);
         assert_eq!(view.matches[0].command, "git status");
         assert!(view.matches[0].match_ranges.is_empty());
+    }
+
+    #[test]
+    fn history_search_handles_prefix_path_collisions() {
+        let prefix = "a".repeat(120);
+        let longer = format!("{prefix}a");
+        let engine = HistorySearchEngine::new(vec![prefix.clone(), longer.clone()]).unwrap();
+
+        let view = engine.search("").unwrap();
+
+        assert_eq!(
+            view.matches
+                .iter()
+                .map(|item| item.command.as_str())
+                .collect::<Vec<_>>(),
+            vec![prefix.as_str(), longer.as_str()]
+        );
     }
 
     #[test]
