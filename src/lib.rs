@@ -10,10 +10,10 @@ use fff::frecency::FrecencyTracker;
 use fff::grep::{GrepMode, GrepSearchOptions, parse_grep_query};
 use fff::query_tracker::QueryTracker;
 use fff::shared::{SharedFilePicker, SharedFrecency, SharedQueryTracker};
-use fff::{PaginationArgs, QueryParser};
+use fff::{FuzzyQuery, PaginationArgs, QueryParser};
 use git2::Status;
+use neo_frizbee::{Config as FrizbeeConfig, MatchIndices, Scoring};
 use sha1::{Digest, Sha1};
-use tempfile::TempDir;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickerMode {
@@ -428,58 +428,20 @@ impl FileSearchEngine {
 }
 
 pub struct HistorySearchEngine {
-    _temp_dir: TempDir,
-    picker: FilePicker,
     commands: Vec<String>,
     display_lines: Vec<String>,
-    search_paths: Vec<String>,
 }
 
 impl HistorySearchEngine {
     pub fn new(commands: Vec<String>) -> Result<Self> {
-        let temp_dir = tempfile::Builder::new()
-            .prefix("fff-history-")
-            .tempdir_in(cache_dir())
-            .context("failed to create history work directory")?;
         let display_lines = commands
             .iter()
             .map(|command| sanitize_history_display(command))
             .collect::<Vec<_>>();
-        let mut search_paths = Vec::with_capacity(display_lines.len());
-
-        for (idx, display) in display_lines.iter().enumerate() {
-            let mut components = history_search_path_components(display);
-            components.push(format!("{idx:08}"));
-            let search_path = components.join("/");
-
-            let mut file_path = temp_dir.path().to_path_buf();
-            for component in &components {
-                file_path.push(component);
-            }
-            if let Some(parent) = file_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&file_path, display)?;
-            search_paths.push(search_path);
-        }
-
-        let mut picker = FilePicker::new(FilePickerOptions {
-            base_path: temp_dir.path().display().to_string(),
-            enable_mmap_cache: false,
-            enable_content_indexing: false,
-            mode: FFFMode::Neovim,
-            cache_budget: None,
-            watch: false,
-            follow_symlinks: false,
-        })?;
-        picker.collect_files()?;
 
         Ok(Self {
-            _temp_dir: temp_dir,
-            picker,
             commands,
             display_lines,
-            search_paths,
         })
     }
 
@@ -504,39 +466,18 @@ impl HistorySearchEngine {
 
         let parser = QueryParser::default();
         let parsed = parser.parse(query);
-        let result = self.picker.fuzzy_search(
-            &parsed,
-            None,
-            FuzzySearchOptions {
-                max_threads: 0,
-                current_file: None,
-                project_path: None,
-                combo_boost_score_multiplier: 0,
-                min_combo_count: 0,
-                pagination: PaginationArgs {
-                    offset: 0,
-                    limit: 5000,
-                },
-            },
-        );
-
-        let matched_indices = result
-            .items
+        let matches = history_fuzzy_matches(&self.display_lines, query, &parsed.fuzzy_query)
             .into_iter()
-            .filter_map(|item| {
-                let search_path = item.relative_path(&self.picker);
-                self.search_paths
-                    .iter()
-                    .position(|path| path == &search_path)
-            })
-            .collect::<Vec<_>>();
-
-        let matches = matched_indices
-            .into_iter()
-            .map(|idx| {
-                let command = self.commands.get(idx).cloned().unwrap_or_default();
-                let display = self.display_lines.get(idx).cloned().unwrap_or_default();
-                let match_ranges = fuzzy_match_indices(&display, query)
+            .take(5000)
+            .map(|item| {
+                let command = self.commands.get(item.index).cloned().unwrap_or_default();
+                let display = self
+                    .display_lines
+                    .get(item.index)
+                    .cloned()
+                    .unwrap_or_default();
+                let match_ranges = item
+                    .indices
                     .into_iter()
                     .map(|idx| (idx, idx + 1))
                     .collect::<Vec<_>>();
@@ -557,35 +498,103 @@ impl HistorySearchEngine {
     }
 }
 
-fn history_search_path_components(display: &str) -> Vec<String> {
-    const MAX_COMPONENT_BYTES: usize = 120;
+#[derive(Debug, Clone)]
+struct HistoryFuzzyMatch {
+    index: usize,
+    score: u16,
+    indices: Vec<usize>,
+}
 
-    let safe = display
-        .chars()
-        .map(|ch| match ch {
-            '/' | '\\' => ' ',
-            ch => ch,
-        })
-        .collect::<String>();
-    let safe = safe.trim();
-    if safe.is_empty() {
-        return vec!["entry".to_string()];
+fn history_fuzzy_matches(
+    display_lines: &[String],
+    query: &str,
+    fuzzy_query: &FuzzyQuery<'_>,
+) -> Vec<HistoryFuzzyMatch> {
+    let fuzzy_parts = match fuzzy_query {
+        FuzzyQuery::Text(text) if text.len() >= 2 => vec![*text],
+        FuzzyQuery::Parts(parts) => parts
+            .iter()
+            .copied()
+            .filter(|part| part.len() >= 2)
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+
+    if fuzzy_parts.is_empty() {
+        return (0..display_lines.len())
+            .map(|index| HistoryFuzzyMatch {
+                index,
+                score: 0,
+                indices: Vec::new(),
+            })
+            .collect();
     }
 
-    let mut components = Vec::new();
-    let mut component = String::new();
-    for ch in safe.chars() {
-        if component.len() + ch.len_utf8() > MAX_COMPONENT_BYTES && !component.is_empty() {
-            components.push(component);
-            component = String::new();
+    let max_typos = (query.trim().len() as u16 / 4).clamp(2, 6);
+    let has_uppercase = fuzzy_parts
+        .iter()
+        .any(|part| part.chars().any(|ch| ch.is_uppercase()));
+    let haystacks = display_lines.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut config = history_fuzzy_config(max_typos, has_uppercase);
+    config.sort = fuzzy_parts.len() == 1;
+
+    let mut matches = neo_frizbee::match_list_indices(fuzzy_parts[0], &haystacks, &config)
+        .into_iter()
+        .map(history_match_from_frizbee)
+        .collect::<Vec<_>>();
+
+    if fuzzy_parts.len() > 1 {
+        let total_parts = fuzzy_parts.len() as u32;
+        for part in &fuzzy_parts[1..] {
+            config.max_typos = Some(max_typos.min(part.len() as u16));
+            let subset = matches
+                .iter()
+                .map(|item| haystacks[item.index])
+                .collect::<Vec<_>>();
+            let part_matches = neo_frizbee::match_list_indices(part, &subset, &config);
+            if part_matches.is_empty() {
+                return Vec::new();
+            }
+
+            matches = part_matches
+                .into_iter()
+                .map(|part_match| {
+                    let previous = &matches[part_match.index as usize];
+                    let sum = previous.score as u32 + part_match.score as u32;
+                    HistoryFuzzyMatch {
+                        index: previous.index,
+                        score: (sum / total_parts).min(u16::MAX as u32) as u16,
+                        indices: previous.indices.clone(),
+                    }
+                })
+                .collect();
         }
-        component.push(ch);
-    }
-    if !component.is_empty() {
-        components.push(component);
+
+        matches.sort_unstable_by(|a, b| b.score.cmp(&a.score).then_with(|| a.index.cmp(&b.index)));
     }
 
-    components
+    matches
+}
+
+fn history_fuzzy_config(max_typos: u16, has_uppercase: bool) -> FrizbeeConfig {
+    FrizbeeConfig {
+        max_typos: Some(max_typos),
+        sort: false,
+        scoring: Scoring {
+            capitalization_bonus: if has_uppercase { 8 } else { 0 },
+            matching_case_bonus: if has_uppercase { 4 } else { 0 },
+            ..Default::default()
+        },
+    }
+}
+
+fn history_match_from_frizbee(mut item: MatchIndices) -> HistoryFuzzyMatch {
+    item.indices.sort_unstable();
+    HistoryFuzzyMatch {
+        index: item.index as usize,
+        score: item.score,
+        indices: item.indices,
+    }
 }
 
 pub fn grep_cli_search(options: &GrepCliOptions) -> Result<GrepCliResult> {
@@ -824,7 +833,7 @@ mod tests {
                 .iter()
                 .map(|item| item.command.as_str())
                 .collect::<Vec<_>>(),
-            vec!["git checkout main", "git clone", "git commit"]
+            vec!["git checkout main", "git commit", "git clone"]
         );
     }
 
@@ -836,24 +845,18 @@ mod tests {
 
         assert_eq!(view.total_matched, 1);
         assert_eq!(view.matches[0].command, "git status");
-        assert!(view.matches[0].match_ranges.is_empty());
+        assert!(!view.matches[0].match_ranges.is_empty());
     }
 
     #[test]
-    fn history_search_handles_prefix_path_collisions() {
-        let prefix = "a".repeat(120);
-        let longer = format!("{prefix}a");
-        let engine = HistorySearchEngine::new(vec![prefix.clone(), longer.clone()]).unwrap();
+    fn history_search_handles_long_commands() {
+        let long = format!("{} module token", "a".repeat(700));
+        let engine = HistorySearchEngine::new(vec![long.clone()]).unwrap();
 
-        let view = engine.search("").unwrap();
+        let view = engine.search("mod").unwrap();
 
-        assert_eq!(
-            view.matches
-                .iter()
-                .map(|item| item.command.as_str())
-                .collect::<Vec<_>>(),
-            vec![prefix.as_str(), longer.as_str()]
-        );
+        assert_eq!(view.total_matched, 1);
+        assert_eq!(view.matches[0].command, long);
     }
 
     #[test]
