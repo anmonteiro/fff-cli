@@ -90,6 +90,7 @@ History mode will:
 
 - read commands from stdin if provided
 - otherwise fall back to `HISTFILE` or `~/.zsh_history`
+- fuzzy-match the current query against commands
 - dedupe identical commands while preserving recency direction
 
 ## Zsh setup

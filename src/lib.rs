@@ -431,6 +431,7 @@ pub struct HistorySearchEngine {
     picker: FilePicker,
     commands: Vec<String>,
     display_lines: Vec<String>,
+    search_paths: Vec<String>,
 }
 
 impl HistorySearchEngine {
@@ -439,12 +440,32 @@ impl HistorySearchEngine {
             .prefix("fff-history-")
             .tempdir_in(cache_dir())
             .context("failed to create history work directory")?;
-        let history_file = temp_dir.path().join("history.txt");
         let display_lines = commands
             .iter()
             .map(|command| sanitize_history_display(command))
             .collect::<Vec<_>>();
-        std::fs::write(&history_file, display_lines.join("\n") + "\n")?;
+        let mut seen_paths = std::collections::HashSet::new();
+        let mut search_paths = Vec::with_capacity(display_lines.len());
+
+        for (idx, display) in display_lines.iter().enumerate() {
+            let mut components = history_search_path_components(display);
+            let mut search_path = components.join("/");
+            if !seen_paths.insert(search_path.clone()) {
+                components.push(format!("{idx:08}"));
+                search_path = components.join("/");
+                seen_paths.insert(search_path.clone());
+            }
+
+            let mut file_path = temp_dir.path().to_path_buf();
+            for component in &components {
+                file_path.push(component);
+            }
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&file_path, display)?;
+            search_paths.push(search_path);
+        }
 
         let mut picker = FilePicker::new(FilePickerOptions {
             base_path: temp_dir.path().display().to_string(),
@@ -461,6 +482,7 @@ impl HistorySearchEngine {
             picker,
             commands,
             display_lines,
+            search_paths,
         })
     }
 
@@ -485,36 +507,41 @@ impl HistorySearchEngine {
 
         let parser = QueryParser::default();
         let parsed = parser.parse(query);
-        let result = self.picker.grep(
+        let result = self.picker.fuzzy_search(
             &parsed,
-            &GrepSearchOptions {
-                max_file_size: 10 * 1024 * 1024,
-                max_matches_per_file: 5000,
-                smart_case: true,
-                file_offset: 0,
-                page_limit: 5000,
-                mode: GrepMode::Fuzzy,
-                time_budget_ms: 0,
-                before_context: 0,
-                after_context: 0,
-                classify_definitions: false,
-                trim_whitespace: false,
-                abort_signal: None,
+            None,
+            FuzzySearchOptions {
+                max_threads: 0,
+                current_file: None,
+                project_path: None,
+                combo_boost_score_multiplier: 0,
+                min_combo_count: 0,
+                pagination: PaginationArgs {
+                    offset: 0,
+                    limit: 5000,
+                },
             },
         );
 
-        let total_matched = result.matches.len();
-        let matches = result
-            .matches
+        let matched_indices = result
+            .items
             .into_iter()
-            .map(|item| {
-                let idx = item.line_number.saturating_sub(1) as usize;
+            .filter_map(|item| {
+                let search_path = item.relative_path(&self.picker);
+                self.search_paths
+                    .iter()
+                    .position(|path| path == &search_path)
+            })
+            .collect::<Vec<_>>();
+
+        let matches = matched_indices
+            .into_iter()
+            .map(|idx| {
                 let command = self.commands.get(idx).cloned().unwrap_or_default();
                 let display = self.display_lines.get(idx).cloned().unwrap_or_default();
-                let match_ranges = item
-                    .match_byte_offsets
+                let match_ranges = fuzzy_match_indices(&display, query)
                     .into_iter()
-                    .map(|(start, end)| (start as usize, end as usize))
+                    .map(|idx| (idx, idx + 1))
                     .collect::<Vec<_>>();
 
                 HistoryMatch {
@@ -524,12 +551,44 @@ impl HistorySearchEngine {
                 }
             })
             .collect::<Vec<_>>();
+        let total_matched = matches.len();
 
         Ok(HistorySearchView {
             total_matched,
             matches,
         })
     }
+}
+
+fn history_search_path_components(display: &str) -> Vec<String> {
+    const MAX_COMPONENT_BYTES: usize = 120;
+
+    let safe = display
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' => ' ',
+            ch => ch,
+        })
+        .collect::<String>();
+    let safe = safe.trim();
+    if safe.is_empty() {
+        return vec!["entry".to_string()];
+    }
+
+    let mut components = Vec::new();
+    let mut component = String::new();
+    for ch in safe.chars() {
+        if component.len() + ch.len_utf8() > MAX_COMPONENT_BYTES && !component.is_empty() {
+            components.push(component);
+            component = String::new();
+        }
+        component.push(ch);
+    }
+    if !component.is_empty() {
+        components.push(component);
+    }
+
+    components
 }
 
 pub fn grep_cli_search(options: &GrepCliOptions) -> Result<GrepCliResult> {
@@ -727,6 +786,59 @@ mod tests {
             sanitize_history_display("printf 'a\\n'\necho done"),
             "printf 'a\\n' ↩ echo done"
         );
+    }
+
+    #[test]
+    fn history_search_uses_fff_fuzzy_candidates() {
+        let engine = HistorySearchEngine::new(vec![
+            "git status".to_string(),
+            "git checkout main".to_string(),
+            "cargo test".to_string(),
+        ])
+        .unwrap();
+
+        let view = engine.search("gc").unwrap();
+
+        assert_eq!(view.total_matched, 3);
+        assert_eq!(
+            view.matches
+                .iter()
+                .map(|item| item.command.as_str())
+                .collect::<Vec<_>>(),
+            vec!["git checkout main", "cargo test", "git status"]
+        );
+        assert_eq!(view.matches[0].match_ranges, vec![(0, 1), (4, 5)]);
+    }
+
+    #[test]
+    fn history_search_uses_fff_ranking() {
+        let engine = HistorySearchEngine::new(vec![
+            "git checkout main".to_string(),
+            "git commit".to_string(),
+            "git clone".to_string(),
+        ])
+        .unwrap();
+
+        let view = engine.search("gc").unwrap();
+
+        assert_eq!(
+            view.matches
+                .iter()
+                .map(|item| item.command.as_str())
+                .collect::<Vec<_>>(),
+            vec!["git checkout main", "git clone", "git commit"]
+        );
+    }
+
+    #[test]
+    fn history_search_keeps_fff_typo_tolerance() {
+        let engine = HistorySearchEngine::new(vec!["git status".to_string()]).unwrap();
+
+        let view = engine.search("gz").unwrap();
+
+        assert_eq!(view.total_matched, 1);
+        assert_eq!(view.matches[0].command, "git status");
+        assert!(view.matches[0].match_ranges.is_empty());
     }
 
     #[test]
