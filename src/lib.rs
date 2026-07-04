@@ -329,7 +329,7 @@ impl FileSearchEngine {
         if let Some(parent) = frecency_db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let tracker = FrecencyTracker::new(&frecency_db_path, true).with_context(|| {
+        let tracker = FrecencyTracker::open(&frecency_db_path).with_context(|| {
             format!(
                 "failed to init frecency db at {}",
                 frecency_db_path.display()
@@ -341,7 +341,7 @@ impl FileSearchEngine {
         if let Some(parent) = history_db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let query_db = QueryTracker::new(&history_db_path, true).with_context(|| {
+        let query_db = QueryTracker::open(&history_db_path).with_context(|| {
             format!(
                 "failed to init query tracker db at {}",
                 history_db_path.display()
@@ -360,6 +360,7 @@ impl FileSearchEngine {
                 cache_budget: None,
                 watch: true,
                 follow_symlinks: false,
+                ..Default::default()
             },
         )?;
 
@@ -630,6 +631,7 @@ pub fn grep_cli_search(options: &GrepCliOptions) -> Result<GrepCliResult> {
         cache_budget: None,
         watch: false,
         follow_symlinks: false,
+        ..Default::default()
     })?;
     picker.collect_files()?;
     let result = picker.grep(
