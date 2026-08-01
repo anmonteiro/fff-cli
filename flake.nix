@@ -26,16 +26,6 @@
         "x86_64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
-      patchFffCargoLock = ''
-        perl -0pi -e '
-          s/name = "fff-c"\nversion = "0\.8\.1"/name = "fff-c"\nversion = "0.8.2"/g;
-          s/name = "fff-grep"\nversion = "0\.8\.1"/name = "fff-grep"\nversion = "0.8.2"/g;
-          s/name = "fff-mcp"\nversion = "0\.8\.1"/name = "fff-mcp"\nversion = "0.8.2"/g;
-          s/name = "fff-nvim"\nversion = "0\.8\.1"/name = "fff-nvim"\nversion = "0.8.2"/g;
-          s/name = "fff-query-parser"\nversion = "0\.8\.1"/name = "fff-query-parser"\nversion = "0.8.2"/g;
-          s/name = "fff-search"\nversion = "0\.8\.1"/name = "fff-search"\nversion = "0.8.2"/g;
-        ' Cargo.lock
-      '';
     in
     {
       sources = {
@@ -43,15 +33,7 @@
       };
 
       packages = forAllSystems (pkgs: {
-        fff-nvim = fff.outputs.packages.${pkgs.stdenv.hostPlatform.system}.default.overrideAttrs (old: {
-          cargoArtifacts = old.cargoArtifacts.overrideAttrs (depsOld: {
-            postPatch = (depsOld.postPatch or "") + patchFffCargoLock;
-          });
-          postPatch = (old.postPatch or "") + patchFffCargoLock;
-          postInstall = (old.postInstall or "") + ''
-            ln -sfn $out/lib/ $out/release
-          '';
-        });
+        fff-nvim = fff.outputs.packages.${pkgs.stdenv.hostPlatform.system}.fff-nvim;
 
         default =
           let
