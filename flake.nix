@@ -33,6 +33,7 @@
       };
 
       packages = forAllSystems (pkgs: {
+        fff-mcp = fff.outputs.packages.${pkgs.stdenv.hostPlatform.system}.fff-mcp;
         fff-nvim = fff.outputs.packages.${pkgs.stdenv.hostPlatform.system}.fff-nvim;
 
         default =
